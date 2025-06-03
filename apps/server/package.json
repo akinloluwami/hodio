@@ -1,0 +1,27 @@
+{
+  "name": "server",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^4.2.0",
+    "@hono/node-server": "^1.14.3",
+    "@types/form-data": "^2.5.2",
+    "assemblyai": "^4.13.1",
+    "axios": "^1.9.0",
+    "dotenv": "^16.5.0",
+    "form-data": "^4.0.2",
+    "hono": "^4.7.11",
+    "node-record-lpcm16": "^1.0.1",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.7.1",
+    "typescript": "^5.8.3"
+  }
+}
