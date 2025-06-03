@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { AudioRecorder } from "../components/audio-recorder";
 import { useState } from "react";
 import SpeechToTextPage from "@/pages/speech-to-text";
+import LiveTranscription from "@/components/live-transcription";
 
 export const Route = createFileRoute("/")({
   component: RouteComponent,
@@ -12,7 +13,7 @@ function RouteComponent() {
 
   return (
     <div className="container mx-auto py-8">
-      {transcript && (
+      {/* {transcript && (
         <p className="text-center mt-4 text-sm italic">{transcript}</p>
       )}
 
@@ -21,7 +22,8 @@ function RouteComponent() {
         onRecordingComplete={(blob) => {
           console.log("Recording completed:", blob);
         }}
-      />
+      /> */}
+      <LiveTranscription />
     </div>
   );
 }
