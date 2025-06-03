@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { serve } from "@hono/node-server";
 import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
 import { WebSocketServer, WebSocket } from "ws";
 import * as dotenv from "dotenv";
@@ -30,6 +29,15 @@ const setupDeepgram = (ws: WebSocket) => {
 
   deepgram.addListener(LiveTranscriptionEvents.Open, () => {
     console.log("deepgram: connected");
+    if (ws["deepgramAudioBuffer"]) {
+      console.log(
+        `deepgram: flushing ${ws["deepgramAudioBuffer"].length} buffered messages.`
+      );
+      ws["deepgramAudioBuffer"].forEach((bufferedMessage: Buffer) => {
+        deepgram.send(bufferedMessage);
+      });
+      ws["deepgramAudioBuffer"] = [];
+    }
 
     deepgram.addListener(LiveTranscriptionEvents.Transcript, (data) => {
       console.log("deepgram: transcript received");
@@ -44,6 +52,7 @@ const setupDeepgram = (ws: WebSocket) => {
 
     deepgram.addListener(LiveTranscriptionEvents.Error, (error) => {
       console.error("deepgram: error received", error);
+      ws.send(JSON.stringify({ error: "Deepgram transcription error." }));
     });
 
     deepgram.addListener(LiveTranscriptionEvents.Warning, (warning) => {
@@ -59,24 +68,31 @@ const setupDeepgram = (ws: WebSocket) => {
   return deepgram;
 };
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws: WebSocket) => {
   console.log("socket: client connected");
+
+  (ws as any).deepgramAudioBuffer = [];
 
   let deepgram = setupDeepgram(ws);
 
-  ws.on("message", (message) => {
-    console.log("socket: message received");
-
+  ws.on("message", (message: Buffer) => {
     const readyState = deepgram.getReadyState();
+    console.log("Deepgram ReadyState:", readyState);
+
     if (readyState === 1) {
       deepgram.send(message);
-    } else if (readyState >= 2) {
-      console.log("socket: deepgram closed, retrying connection...");
-      deepgram.finish();
-      deepgram.removeAllListeners();
-      deepgram = setupDeepgram(ws);
     } else {
-      console.log("socket: deepgram not ready");
+      if (readyState === 0) {
+        (ws as any).deepgramAudioBuffer.push(message);
+        console.log("socket: deepgram not ready, message buffered.");
+      } else {
+        console.log("socket: deepgram closed, retrying connection...");
+        deepgram.finish();
+        deepgram.removeAllListeners();
+        deepgram = setupDeepgram(ws);
+        (ws as any).deepgramAudioBuffer.push(message);
+        console.log("socket: message buffered during deepgram reconnect.");
+      }
     }
   });
 
@@ -84,6 +100,10 @@ wss.on("connection", (ws) => {
     console.log("socket: client disconnected");
     deepgram.finish();
     deepgram.removeAllListeners();
+    if ((ws as any).deepgramAudioBuffer) {
+      (ws as any).deepgramAudioBuffer = [];
+    }
+    clearInterval(keepAlive);
   });
 });
 
