@@ -13,55 +13,20 @@ export function AudioRecorder({
 }: AudioRecorderProps) {
   let mediaRecorder: MediaRecorder;
 
-  const socketRef = useRef<WebSocket | null>(null);
-
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-
   const startLiveRecording = async () => {
-    if (!recordRef.current) return;
-
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-    const recorder = new MediaRecorder(stream, {
+    mediaRecorder = new MediaRecorder(stream, {
       mimeType: "audio/webm;codecs=opus",
     });
 
-    mediaRecorderRef.current = recorder;
-
-    socketRef.current = new WebSocket("ws://localhost:9090");
-
-    socketRef.current.onopen = () => {
-      recorder.start(500); // start with 500ms timeslice when ws ready
-    };
-
-    socketRef.current.onmessage = (event) => {
-      try {
-        const { transcript } = JSON.parse(event.data);
-        if (transcript) onTranscript?.(transcript);
-      } catch (err) {
-        console.error("Failed to parse message:", event.data);
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        // Handle the audio data if needed
       }
     };
 
-    recorder.ondataavailable = (event) => {
-      if (
-        event.data.size > 0 &&
-        socketRef.current?.readyState === WebSocket.OPEN
-      ) {
-        socketRef.current.send(event.data);
-      }
-    };
-
-    recorder.onerror = (err) => {
-      console.error("Recorder error:", err);
-    };
-  };
-
-  const stopLiveRecording = () => {
-    mediaRecorderRef.current?.stop();
-    socketRef.current?.close();
-    mediaRecorderRef.current = null;
-    socketRef.current = null;
+    mediaRecorder.start(250);
   };
 
   const [isRecording, setIsRecording] = useState(false);
@@ -169,24 +134,33 @@ export function AudioRecorder({
     };
   }, []);
 
-  // Update your handleRecord to call stopLiveRecording when stopping:
   const handleRecord = async () => {
     if (!recordRef.current) return;
+    startLiveRecording();
 
-    if (isRecording) {
+    if (recordRef.current.isRecording() || recordRef.current.isPaused()) {
       recordRef.current.stopRecording();
-      stopLiveRecording(); // STOP your manual mediaRecorder and socket here
       setIsRecording(false);
       setIsPaused(false);
       return;
     }
 
-    // clear old stuff...
+    try {
+      // Clear previous recording
+      if (recordingsContainerRef.current) {
+        recordingsContainerRef.current.innerHTML = "";
+      }
+      if (recordedWaveSurferRef.current) {
+        recordedWaveSurferRef.current.destroy();
+        recordedWaveSurferRef.current = null;
+      }
+      setRecordedBlob(null);
 
-    await recordRef.current.startRecording();
-    await startLiveRecording();
-
-    setIsRecording(true);
+      await recordRef.current.startRecording();
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Failed to start recording:", error);
+    }
   };
 
   const handlePause = () => {
