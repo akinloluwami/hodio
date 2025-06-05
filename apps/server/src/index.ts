@@ -11,9 +11,13 @@ const server = createServer();
 const wss = new WebSocketServer({ server });
 
 const deepgramClient = createClient(process.env.DEEPGRAM_API_KEY!);
-let keepAlive: NodeJS.Timer;
+let keepAlive: NodeJS.Timeout;
 
-const setupDeepgram = (ws: WebSocket) => {
+interface CustomWebSocket extends WebSocket {
+  deepgramAudioBuffer: Buffer[];
+}
+
+const setupDeepgram = (ws: CustomWebSocket) => {
   const deepgram = deepgramClient.listen.live({
     language: "en",
     punctuate: true,
@@ -29,14 +33,15 @@ const setupDeepgram = (ws: WebSocket) => {
 
   deepgram.addListener(LiveTranscriptionEvents.Open, () => {
     console.log("deepgram: connected");
-    if (ws["deepgramAudioBuffer"]) {
+    if (ws.deepgramAudioBuffer) {
       console.log(
-        `deepgram: flushing ${ws["deepgramAudioBuffer"].length} buffered messages.`
+        `deepgram: flushing ${ws.deepgramAudioBuffer.length} buffered messages.`
       );
-      ws["deepgramAudioBuffer"].forEach((bufferedMessage: Buffer) => {
+      ws.deepgramAudioBuffer.forEach((bufferedMessage: Buffer) => {
+        //@ts-ignore
         deepgram.send(bufferedMessage);
       });
-      ws["deepgramAudioBuffer"] = [];
+      ws.deepgramAudioBuffer = [];
     }
 
     deepgram.addListener(LiveTranscriptionEvents.Transcript, (data) => {
@@ -55,10 +60,6 @@ const setupDeepgram = (ws: WebSocket) => {
       ws.send(JSON.stringify({ error: "Deepgram transcription error." }));
     });
 
-    deepgram.addListener(LiveTranscriptionEvents.Warning, (warning) => {
-      console.warn("deepgram: warning received", warning);
-    });
-
     deepgram.addListener(LiveTranscriptionEvents.Metadata, (data) => {
       console.log("deepgram: metadata received");
       ws.send(JSON.stringify({ metadata: data }));
@@ -71,26 +72,28 @@ const setupDeepgram = (ws: WebSocket) => {
 wss.on("connection", (ws: WebSocket) => {
   console.log("socket: client connected");
 
-  (ws as any).deepgramAudioBuffer = [];
+  const customWs = ws as CustomWebSocket;
+  customWs.deepgramAudioBuffer = [];
 
-  let deepgram = setupDeepgram(ws);
+  let deepgram = setupDeepgram(customWs);
 
   ws.on("message", (message: Buffer) => {
     const readyState = deepgram.getReadyState();
     console.log("Deepgram ReadyState:", readyState);
 
     if (readyState === 1) {
+      //@ts-ignore
       deepgram.send(message);
     } else {
       if (readyState === 0) {
-        (ws as any).deepgramAudioBuffer.push(message);
+        customWs.deepgramAudioBuffer.push(message);
         console.log("socket: deepgram not ready, message buffered.");
       } else {
         console.log("socket: deepgram closed, retrying connection...");
         deepgram.finish();
         deepgram.removeAllListeners();
-        deepgram = setupDeepgram(ws);
-        (ws as any).deepgramAudioBuffer.push(message);
+        deepgram = setupDeepgram(customWs);
+        customWs.deepgramAudioBuffer.push(message);
         console.log("socket: message buffered during deepgram reconnect.");
       }
     }
@@ -100,8 +103,8 @@ wss.on("connection", (ws: WebSocket) => {
     console.log("socket: client disconnected");
     deepgram.finish();
     deepgram.removeAllListeners();
-    if ((ws as any).deepgramAudioBuffer) {
-      (ws as any).deepgramAudioBuffer = [];
+    if (customWs.deepgramAudioBuffer) {
+      customWs.deepgramAudioBuffer = [];
     }
     clearInterval(keepAlive);
   });
