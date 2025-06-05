@@ -104,7 +104,6 @@ const LiveTranscription: React.FC = () => {
                   if (newTimings.length === 0) {
                     newTimings.push(...words);
                   } else {
-                    // Replace the last set of words
                     const lastWordIndex = newTimings.length - words.length;
                     newTimings.splice(lastWordIndex, words.length, ...words);
                   }
@@ -304,10 +303,15 @@ const LiveTranscription: React.FC = () => {
         });
 
         playbackWavesurferRef.current.on("audioprocess", (currentTime) => {
-          // Find the current word based on the audio time
-          const currentWord = wordTimings.findIndex(
-            (word) => currentTime >= word.start && currentTime <= word.end
-          );
+          const currentWord = wordTimings.findIndex((word, index) => {
+            const isCurrentWord =
+              currentTime >= word.start && currentTime <= word.end;
+            const isNextWord =
+              index < wordTimings.length - 1 &&
+              currentTime > word.end &&
+              currentTime < wordTimings[index + 1].start;
+            return isCurrentWord || isNextWord;
+          });
           setCurrentWordIndex(currentWord);
         });
 
@@ -360,25 +364,31 @@ const LiveTranscription: React.FC = () => {
       <div className="mt-6">
         {transcripts.length === 0 && !isListening && !recordedAudioBlob
           ? ""
-          : transcripts.map((transcript, index) => (
-              <p key={index} className="my-1">
-                {transcript.split(" ").map((word, wordIndex) => {
-                  const globalWordIndex =
-                    index * transcript.split(" ").length + wordIndex;
-                  const isCurrentWord = globalWordIndex === currentWordIndex;
-                  return (
-                    <span
-                      key={wordIndex}
-                      className={`inline-block px-1 mx-0.5 rounded ${
-                        isCurrentWord ? "bg-yellow-200" : ""
-                      }`}
-                    >
-                      {word}
-                    </span>
-                  );
-                })}
-              </p>
-            ))}
+          : transcripts.map((transcript, index) => {
+              const words = transcript.split(" ");
+              const startIndex = transcripts
+                .slice(0, index)
+                .reduce((acc, t) => acc + t.split(" ").length, 0);
+
+              return (
+                <p key={index} className="my-1">
+                  {words.map((word, wordIndex) => {
+                    const globalWordIndex = startIndex + wordIndex;
+                    const isCurrentWord = globalWordIndex === currentWordIndex;
+                    return (
+                      <span
+                        key={wordIndex}
+                        className={`inline-block px-1 mx-0.5 rounded ${
+                          isCurrentWord ? "bg-yellow-200" : ""
+                        }`}
+                      >
+                        {word}
+                      </span>
+                    );
+                  })}
+                </p>
+              );
+            })}
       </div>
 
       <div className="flex items-center gap-x-2">
