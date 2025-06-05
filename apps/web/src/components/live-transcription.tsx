@@ -1,10 +1,21 @@
 import React, { useEffect, useRef, useState, useCallback } from "react";
+import { BsRecordCircleFill } from "react-icons/bs";
+import { IoStop } from "react-icons/io5";
 import WaveSurfer from "wavesurfer.js";
 import RecordPlugin from "wavesurfer.js/dist/plugins/record.esm.js";
 
 interface TranscriptData {
   channel: {
-    alternatives: Array<{ transcript: string }>;
+    alternatives: Array<{
+      transcript: string;
+      words?: Array<{
+        word: string;
+        start: number;
+        end: number;
+        confidence: number;
+        punctuated_word: string;
+      }>;
+    }>;
   };
   is_final: boolean;
 }
@@ -17,6 +28,15 @@ type WebSocketMessage = TranscriptData | MetadataData;
 
 const LiveTranscription: React.FC = () => {
   const [transcripts, setTranscripts] = useState<string[]>([]);
+  const [wordTimings, setWordTimings] = useState<
+    Array<{
+      word: string;
+      start: number;
+      end: number;
+      punctuated_word: string;
+    }>
+  >([]);
+  const [currentWordIndex, setCurrentWordIndex] = useState<number>(-1);
   const [isListening, setIsListening] = useState<boolean>(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +78,8 @@ const LiveTranscription: React.FC = () => {
         const data: WebSocketMessage = JSON.parse(event.data);
         if ("channel" in data && data.channel?.alternatives) {
           const transcript = data.channel.alternatives[0]?.transcript;
+          const words = data.channel.alternatives[0]?.words;
+
           if (transcript) {
             setTranscripts((prev) => {
               if (data.is_final) {
@@ -72,6 +94,24 @@ const LiveTranscription: React.FC = () => {
                 return newTranscripts;
               }
             });
+
+            if (words) {
+              setWordTimings((prev) => {
+                if (data.is_final) {
+                  return [...prev, ...words];
+                } else {
+                  const newTimings = [...prev];
+                  if (newTimings.length === 0) {
+                    newTimings.push(...words);
+                  } else {
+                    // Replace the last set of words
+                    const lastWordIndex = newTimings.length - words.length;
+                    newTimings.splice(lastWordIndex, words.length, ...words);
+                  }
+                  return newTimings;
+                }
+              });
+            }
           }
         } else if ("metadata" in data) {
           console.log("Received metadata:", data.metadata);
@@ -263,15 +303,24 @@ const LiveTranscription: React.FC = () => {
           playbackWavesurferRef.current?.play();
         });
 
+        playbackWavesurferRef.current.on("audioprocess", (currentTime) => {
+          // Find the current word based on the audio time
+          const currentWord = wordTimings.findIndex(
+            (word) => currentTime >= word.start && currentTime <= word.end
+          );
+          setCurrentWordIndex(currentWord);
+        });
+
         playbackWavesurferRef.current.on("finish", () => {
           console.log("Playback finished");
           playbackWavesurferRef.current?.stop();
+          setCurrentWordIndex(-1);
         });
       }
     } else {
       console.log("No recorded audio to play back.");
     }
-  }, [isListening, recordedAudioBlob, stopListening]);
+  }, [isListening, recordedAudioBlob, stopListening, wordTimings]);
 
   useEffect(() => {
     return () => {
@@ -285,18 +334,16 @@ const LiveTranscription: React.FC = () => {
   }, [stopListening]);
 
   return (
-    <div className="p-6 font-sans">
-      {error && <p className="text-red-600 mb-4">Error: {error}</p>}
+    <div className="flex items-center justify-center min-h-screen flex-col p-4">
+      {/* {error && <p className="text-red-600 mb-4">Error: {error}</p>} */}
 
-      {/* Live Waveform Container */}
-      <div className="bg-blue-100 h-72 rounded-4xl">
+      <div className="w-full">
         <div
           ref={waveformContainerRef}
           style={{
             height: "100px",
             overflow: "hidden",
           }}
-          className="absolute"
         ></div>
 
         {recordedAudioBlob && (
@@ -315,37 +362,54 @@ const LiveTranscription: React.FC = () => {
           ? ""
           : transcripts.map((transcript, index) => (
               <p key={index} className="my-1">
-                {transcript}
+                {transcript.split(" ").map((word, wordIndex) => {
+                  const globalWordIndex =
+                    index * transcript.split(" ").length + wordIndex;
+                  const isCurrentWord = globalWordIndex === currentWordIndex;
+                  return (
+                    <span
+                      key={wordIndex}
+                      className={`inline-block px-1 mx-0.5 rounded ${
+                        isCurrentWord ? "bg-yellow-200" : ""
+                      }`}
+                    >
+                      {word}
+                    </span>
+                  );
+                })}
               </p>
             ))}
       </div>
 
-      {isListening && <p className="mt-4 text-blue-600">({recordingTime})</p>}
-      <div className="flex space-x-2 mb-4 items-center justify-center">
+      <div className="flex items-center gap-x-2">
         <button
           onClick={isListening ? stopListening : startListening}
-          className={`px-4 py-2 text-white text-lg font-semibold rounded-full bg-red-500`}
+          className={`px-4 py-2 text-white text-lg font-semibold rounded-full bg-red-500 flex items-center gap-2 hover:bg-red-600 transition-colors ${
+            isListening ? "bg-red-600" : "bg-red-500"
+          }`}
         >
-          {isListening ? "Stop Recording" : "Start Recording"}
+          {isListening ? <IoStop /> : <BsRecordCircleFill />}
+          {isListening ? "Stop" : "Record"}
         </button>
-
         {isListening && (
           <button
-            onClick={handlePauseResumeRecording}
+            onClick={() => {
+              console.log("Pause/Resume Recording clicked");
+              handlePauseResumeRecording;
+            }}
             className={`px-4 py-2 text-white text-lg font-semibold rounded-full ${
-              isRecordingPaused ? "bg-blue-600" : "bg-yellow-600"
+              isRecordingPaused ? "bg-blue-600" : "bg-yellow-500"
             }`}
           >
-            {isRecordingPaused ? "Resume Recording" : "Pause Recording"}
+            {isRecordingPaused ? "Resume" : "Pause"}
           </button>
         )}
-
         {recordedAudioBlob && !isListening && (
           <button
             onClick={handleStopAndPlayBack}
-            className="px-4 py-2 text-white text-lg font-semibold rounded bg-purple-600"
+            className="px-4 py-2 text-white text-lg font-semibold rounded-full bg-purple-600"
           >
-            Play Back Recording
+            Play
           </button>
         )}
       </div>
