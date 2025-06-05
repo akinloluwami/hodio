@@ -12,7 +12,7 @@ function RouteComponent() {
   const [transcript, setTranscript] = useState("");
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="">
       {/* {transcript && (
         <p className="text-center mt-4 text-sm italic">{transcript}</p>
       )}
