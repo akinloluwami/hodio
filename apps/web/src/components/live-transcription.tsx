@@ -43,6 +43,7 @@ const LiveTranscription: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [recordingTime, setRecordingTime] = useState<string>("00:00");
   const [recordedAudioBlob, setRecordedAudioBlob] = useState<Blob | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
 
   const websocketRef = useRef<WebSocket | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -62,6 +63,7 @@ const LiveTranscription: React.FC = () => {
   };
 
   const startListening = useCallback(async () => {
+    setIsRecording(true);
     setError(null);
     try {
       websocketRef.current = new WebSocket("ws://localhost:9090");
@@ -337,7 +339,7 @@ const LiveTranscription: React.FC = () => {
         playbackWavesurferRef.current = null;
       }
     };
-  }, [stopListening]);
+  }, []); // Empty dependency array to run only on mount
 
   useEffect(() => {
     if (transcriptContainerRef.current) {
@@ -347,56 +349,78 @@ const LiveTranscription: React.FC = () => {
   }, [transcripts]);
 
   return (
-    <div className="flex items-center min-h-screen flex-col p-4 mt-10">
-      <div
-        ref={transcriptContainerRef}
-        className="h-[500px] overflow-y-auto w-4xl mx-auto text-2xl font-medium hidden-scrollbar"
-      >
-        {transcripts.length === 0 && !isListening && !recordedAudioBlob
-          ? ""
-          : transcripts.map((transcript, index) => {
-              const words = transcript.split(" ");
-              const startIndex = transcripts
-                .slice(0, index)
-                .reduce((acc, t) => acc + t.split(" ").length, 0);
+    <div className="flex items-center justify-center min-h-screen flex-col p-4">
+      {error && (
+        <div className="mb-4 text-center">
+          <p className="text-red-600 text-sm">{error}</p>
+        </div>
+      )}
 
-              return (
-                <motion.p
-                  key={index}
-                  className="my-1"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, ease: "easeOut" }}
-                >
-                  {words.map((word, wordIndex) => {
-                    const globalWordIndex = startIndex + wordIndex;
-                    const isCurrentWord = globalWordIndex === currentWordIndex;
-                    return (
-                      <span
-                        key={wordIndex}
-                        className={`inline-block px-1 mx-0.5 rounded ${
-                          isCurrentWord ? "bg-yellow-200" : ""
-                        }`}
-                      >
-                        {word}
-                      </span>
-                    );
-                  })}
-                </motion.p>
-              );
-            })}
-      </div>
+      {transcripts.length > 0 && (
+        <motion.div
+          ref={transcriptContainerRef}
+          className="h-[500px] overflow-y-auto w-4xl mx-auto text-2xl font-medium hidden-scrollbar"
+        >
+          {transcripts.length === 0 && !isListening && !recordedAudioBlob
+            ? ""
+            : transcripts.map((transcript, index) => {
+                const words = transcript.split(" ");
+                const startIndex = transcripts
+                  .slice(0, index)
+                  .reduce((acc, t) => acc + t.split(" ").length, 0);
 
-      {/* {error && <p className="text-red-600 mb-4">Error: {error}</p>} */}
+                return (
+                  <motion.p
+                    key={index}
+                    className="my-1"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: "easeOut" }}
+                  >
+                    {words.map((word, wordIndex) => {
+                      const globalWordIndex = startIndex + wordIndex;
+                      const isCurrentWord =
+                        globalWordIndex === currentWordIndex;
+                      return (
+                        <span
+                          key={wordIndex}
+                          className={`inline-block px-1 mx-0.5 rounded ${
+                            isCurrentWord ? "bg-yellow-200" : ""
+                          }`}
+                        >
+                          {word}
+                        </span>
+                      );
+                    })}
+                  </motion.p>
+                );
+              })}
+        </motion.div>
+      )}
 
-      <div className="w-full">
-        <div
+      {error && <p className="text-red-600 mb-4">Error: {error}</p>}
+
+      <div className="h-[100px] w-full">
+        {!isRecording && (
+          <p className="text-center">
+            Click the button below to start recording...
+          </p>
+        )}
+
+        <motion.div
           ref={waveformContainerRef}
+          className="w-full"
           style={{
             height: "100px",
             overflow: "hidden",
           }}
-        ></div>
+          initial={{
+            height: 0,
+          }}
+          animate={{
+            height: 100,
+          }}
+        ></motion.div>
 
         {recordedAudioBlob && (
           <div
@@ -421,10 +445,7 @@ const LiveTranscription: React.FC = () => {
         </button>
         {isListening && (
           <button
-            onClick={() => {
-              console.log("Pause/Resume Recording clicked");
-              handlePauseResumeRecording;
-            }}
+            onClick={handlePauseResumeRecording}
             className={`px-4 py-2 text-white text-lg font-semibold rounded-full ${
               isRecordingPaused ? "bg-blue-600" : "bg-yellow-500"
             }`}
